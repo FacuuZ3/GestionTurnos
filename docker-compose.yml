@@ -1,0 +1,67 @@
+# ============================================================================
+# docker-compose.yml
+# ----------------------------------------------------------------------------
+# Orquesta los servicios necesarios para la ejecución local del sistema:
+#   - postgres: motor de base de datos relacional para Prisma.
+#   - api:     backend NestJS (opcional, puede ejecutarse fuera de Docker
+#              durante el desarrollo para aprovechar hot-reload nativo).
+#
+# REFERENCIA INFORME - Capítulo 5: Implementación
+# Sección: Infraestructura y despliegue
+# Diagrama relacionado: Diagrama de Despliegue
+# Descripción académica: La aplicación se contenedoriza siguiendo el patrón
+#   "infrastructure as code", facilitando la reproducibilidad del entorno
+#   tanto para evaluadores del trabajo final como para futuros despliegues
+#   en producción.
+# ============================================================================
+version: "3.9"
+
+services:
+  # --------------------------------------------------------------------------
+  # PostgreSQL: motor relacional principal.
+  # Volumen persistente para conservar datos entre reinicios.
+  # --------------------------------------------------------------------------
+  postgres:
+    image: postgres:16-alpine
+    container_name: padel_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-padel}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-padel}
+      POSTGRES_DB: ${POSTGRES_DB:-padel_turnos}
+    ports:
+      - "5432:5432"
+    volumes:
+      - padel_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-padel}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # --------------------------------------------------------------------------
+  # API NestJS (opcional para producción / staging).
+  # Para desarrollo se recomienda ejecutar `npm run start:dev` fuera de Docker.
+  # --------------------------------------------------------------------------
+  api:
+    build:
+      context: ./apps/api
+      dockerfile: Dockerfile
+    container_name: padel_api
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-padel}:${POSTGRES_PASSWORD:-padel}@postgres:5432/${POSTGRES_DB:-padel_turnos}?schema=public
+      NODE_ENV: production
+    env_file:
+      - ./apps/api/.env
+    ports:
+      - "3001:3001"
+    profiles:
+      - full
+
+volumes:
+  padel_pgdata:
+    name: padel_pgdata

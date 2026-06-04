@@ -1,0 +1,310 @@
+// ============================================================================
+//  schema.prisma
+//  ---------------------------------------------------------------------------
+//  Modelo de datos del Sistema Integral de Gestión y Reserva de Turnos para
+//  Complejos Deportivos de Pádel.
+//
+//  REFERENCIA INFORME - Capítulo 4: Diseño del Sistema
+//  Sección: Modelo de Datos / Diccionario de Datos
+//  Diagrama relacionado: DER (Diagrama Entidad-Relación) y
+//                        Diagrama de Clases del dominio.
+//  Descripción académica: El presente esquema formaliza las entidades
+//    Usuario, Cancha y Reserva, junto con sus relaciones y restricciones
+//    de integridad. Se utiliza UUID como clave primaria para evitar la
+//    enumeración secuencial de recursos desde el frontend, mejorando la
+//    seguridad y la escalabilidad horizontal.
+// ============================================================================
+
+// ---------------------------------------------------------------------------
+// Generador y data source
+// ---------------------------------------------------------------------------
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ===========================================================================
+//  ENUMERACIONES
+// ===========================================================================
+
+/// Roles de usuario admitidos por el sistema.
+/// USER: cliente final que reserva turnos.
+/// ADMIN: personal del complejo deportivo que administra canchas y reservas.
+enum Role {
+  USER
+  ADMIN
+}
+
+/// Tipos de deporte soportados por una cancha.
+/// Se incluyen TENNIS y FUTBOL para preparar la extensibilidad documentada
+/// en el Capítulo de Conclusiones (Trabajo Futuro).
+enum SportType {
+  PADEL
+  TENNIS
+  FUTBOL
+}
+
+/// Estados posibles del ciclo de vida de una reserva.
+/// PENDING:   creada pero a la espera de confirmación (modo manual).
+/// CONFIRMED: confirmada y vigente (estado por defecto en alta automática).
+/// CANCELLED: cancelada por el usuario o por el administrador.
+enum ReservationStatus {
+  PENDING
+  CONFIRMED
+  CANCELLED
+}
+
+// ===========================================================================
+//  MODELOS
+// ===========================================================================
+
+/// Usuarios del sistema (clientes y administradores).
+///
+/// Diccionario de Datos:
+///  - id:                Identificador único universal (UUID v4).
+///  - name:              Nombre y apellido del usuario.
+///  - email:             Correo electrónico, único en todo el sistema. Sirve
+///                       como identificador funcional para el login.
+///  - password:          Hash bcrypt de la contraseña (nunca se almacena en
+///                       texto plano). Coste configurado en AuthService.
+///  - phone:             Teléfono de contacto. Opcional. Reservado para la
+///                       integración futura con WhatsApp.
+///  - role:              Rol del usuario (USER / ADMIN).
+///  - isEmailVerified:   Indicador de cuenta activada. El usuario solo
+///                       puede operar reservas si su email está verificado.
+///  - emailVerifyToken:  Token aleatorio enviado por correo para validar la
+///                       cuenta. Se descarta tras la verificación.
+///  - createdAt:         Marca temporal de alta (auditoría).
+///  - updatedAt:         Marca temporal de última modificación.
+model User {
+  id               String   @id @default(uuid()) @db.Uuid
+  name             String   @db.VarChar(120)
+  email            String   @unique @db.VarChar(160)
+  password         String   @db.VarChar(255)
+  phone            String?  @db.VarChar(30)
+  role             Role     @default(USER)
+  isEmailVerified             Boolean   @default(false)
+  emailVerifyToken            String?   @unique @db.VarChar(120)
+  /// Token aleatorio para reseteo de contraseña. Se invalida tras el uso.
+  passwordResetToken          String?   @unique @db.VarChar(120)
+  /// Vencimiento del token de reseteo (típicamente 1 hora desde su emisión).
+  passwordResetTokenExpiresAt DateTime?
+
+  reservations Reservation[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([role])
+  @@map("users")
+}
+
+/// Canchas del complejo deportivo.
+///
+/// Diccionario de Datos:
+///  - id:            UUID de la cancha.
+///  - name:          Nombre comercial (ej.: "Cancha 1", "Cancha Norte").
+///  - sportType:     Deporte para el cual está habilitada la cancha.
+///  - description:   Descripción libre (superficie, techada, iluminación...).
+///  - isActive:      Soft delete: las canchas "eliminadas" se desactivan
+///                   en lugar de borrarse físicamente, preservando las
+///                   reservas históricas asociadas.
+///  - pricePerHour:  Precio vigente por hora (en pesos argentinos). Decimal
+///                   con 2 dígitos de precisión para evitar errores de coma
+///                   flotante en facturación.
+///  - reservations:  Reservas asociadas (cardinalidad 1:N).
+model Court {
+  id           String    @id @default(uuid()) @db.Uuid
+  name         String    @db.VarChar(80)
+  sportType    SportType @default(PADEL)
+  description  String?   @db.VarChar(500)
+  isActive     Boolean   @default(true)
+  pricePerHour Decimal   @db.Decimal(10, 2)
+
+  reservations          Reservation[]
+  recurringReservations RecurringReservation[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([isActive])
+  @@map("courts")
+}
+
+/// Turnos fijos semanales (bloqueos recurrentes).
+///
+/// Permiten al administrador marcar que una cancha está ocupada todas las
+/// semanas en un mismo día y horario (p.ej. "todos los lunes 13:00-14:30").
+///
+/// Diccionario de Datos:
+///  - id:          UUID del turno fijo.
+///  - courtId:     FK a Court.
+///  - dayOfWeek:   día de la semana (0=domingo, 1=lunes, ..., 6=sábado).
+///  - startMinute: minuto del día en que arranca el bloqueo (0..1439).
+///  - endMinute:   minuto del día en que termina el bloqueo (0..1440).
+///  - notes:       observación libre (p.ej. "Escuela de pádel").
+///  - isActive:    soft delete: las suspensiones conservan el histórico.
+///
+/// Convención: el almacenamiento como "minutos desde medianoche" simplifica
+/// las consultas de solapamiento (sin necesidad de manejar zonas horarias
+/// para horarios que sólo dependen del día de la semana).
+///
+/// REFERENCIA INFORME - Capítulo 4: Diseño del Sistema
+/// Sección: Subsistema de Reservas - Bloqueos recurrentes
+model RecurringReservation {
+  id          String  @id @default(uuid()) @db.Uuid
+  courtId     String  @db.Uuid
+  dayOfWeek   Int     @db.SmallInt
+  startMinute Int     @db.SmallInt
+  endMinute   Int     @db.SmallInt
+  notes       String? @db.VarChar(500)
+  isActive    Boolean @default(true)
+
+  court Court @relation(fields: [courtId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([courtId, dayOfWeek, isActive])
+  @@map("recurring_reservations")
+}
+
+/// Reservas de turnos.
+///
+/// Entidad central del dominio. Conecta a un Usuario con una Cancha durante
+/// un rango horario [startTime, endTime).
+///
+/// Diccionario de Datos:
+///  - id:         UUID de la reserva.
+///  - userId:     FK a User (titular de la reserva).
+///  - courtId:    FK a Court (cancha reservada).
+///  - startTime:  Fecha y hora de inicio (en UTC, con offset Buenos Aires
+///                aplicado en la capa de presentación).
+///  - endTime:    Fecha y hora de finalización. Debe cumplir startTime < endTime,
+///                validado en el servicio dentro de la transacción.
+///  - status:     Estado actual (PENDING / CONFIRMED / CANCELLED).
+///  - notes:      Observaciones libres ingresadas por el usuario o el admin.
+///  - user:       Relación inversa hacia User.
+///  - court:      Relación inversa hacia Court.
+///
+/// Restricciones:
+///  - Política onDelete: Restrict en ambas FKs para preservar la integridad
+///    histórica (no se permite eliminar un usuario ni una cancha con
+///    reservas asociadas; en su lugar se desactivan).
+///  - Índice compuesto (courtId, startTime, endTime) para acelerar las
+///    consultas de disponibilidad y solapamiento (ver ReservationsService).
+model Reservation {
+  id        String            @id @default(uuid()) @db.Uuid
+  userId    String            @db.Uuid
+  courtId   String            @db.Uuid
+  startTime DateTime          @db.Timestamptz(6)
+  endTime   DateTime          @db.Timestamptz(6)
+  status    ReservationStatus @default(CONFIRMED)
+  notes     String?           @db.VarChar(500)
+  /// Flag para evitar enviar más de un recordatorio por reserva. El cron
+  /// busca reservas con reminderSent=false que arrancan en menos de 25 hs.
+  reminderSent Boolean        @default(false)
+  /// Marca de tiempo de la última reprogramación realizada por un admin.
+  /// NULL = nunca fue reprogramada.
+  rescheduledAt DateTime?     @db.Timestamptz(6)
+
+  user  User  @relation(fields: [userId], references: [id], onDelete: Restrict)
+  court Court @relation(fields: [courtId], references: [id], onDelete: Restrict)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Índice principal para consultas de disponibilidad por cancha y rango.
+  @@index([courtId, startTime, endTime])
+
+  // Índices secundarios para los listados del dashboard.
+  @@index([userId, startTime])
+  @@index([status])
+
+  @@map("reservations")
+}
+
+/// Registro inmutable de acciones administrativas.
+///
+/// Cada vez que un ADMIN realiza una acción que modifica el sistema (crear/
+/// suspender/eliminar cancha, cancelar/reprogramar reserva ajena, editar
+/// info del club, etc.), se persiste una fila aquí. Sirve para:
+///   - Auditoría legal y forense.
+///   - Reconstruir el historial de cambios.
+///   - Detectar abusos o accidentes operativos.
+///
+/// REFERENCIA INFORME - Capítulo 5: Implementación
+/// Sección: Trazabilidad de acciones administrativas (audit log)
+model AuditLog {
+  id        String   @id @default(uuid()) @db.Uuid
+  /// Usuario que ejecutó la acción.
+  actorId   String   @db.Uuid
+  actorEmail String  @db.VarChar(160)
+  /// Verbo de la acción (CREATE, UPDATE, DELETE, CANCEL, RESCHEDULE...).
+  action    String   @db.VarChar(40)
+  /// Recurso afectado (Court, Reservation, ClubInfo, RecurringReservation...).
+  resource  String   @db.VarChar(40)
+  /// ID del recurso afectado (cuando aplica).
+  resourceId String? @db.VarChar(64)
+  /// Metadata adicional en JSON (cambios, contexto, etc.).
+  metadata  Json?
+  /// IP del cliente al momento de la acción.
+  ip        String?  @db.VarChar(45)
+  createdAt DateTime @default(now())
+
+  @@index([actorId, createdAt])
+  @@index([resource, resourceId])
+  @@index([createdAt])
+  @@map("audit_logs")
+}
+
+/// Información institucional del club (singleton).
+///
+/// El sistema mantiene una única fila para representar los datos públicos
+/// del complejo: ubicación, horarios y servicios. La edición se realiza
+/// desde el panel administrativo.
+///
+/// REFERENCIA INFORME - Capítulo 4: Diseño del Sistema
+/// Sección: Configuración pública del complejo
+model ClubInfo {
+  id           String   @id @default("default")
+  /// Dirección postal / ubicación del complejo.
+  address      String   @db.VarChar(255)
+  /// URL del iframe de Google Maps (campo `src` del embed). Opcional.
+  mapEmbedUrl  String?  @db.Text
+  /// Horario operativo de lunes a viernes (texto libre).
+  weekdayHours String   @db.VarChar(80)
+  /// Horario operativo sábados y domingos.
+  weekendHours String   @db.VarChar(80)
+  /// Horario operativo en feriados.
+  holidayHours String   @db.VarChar(80)
+  /// Lista de servicios disponibles (Wi-Fi, Vestuario, Bar, etc.).
+  /// Se almacena como array nativo de Postgres.
+  services     String[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("club_info")
+}
+
+// ============================================================================
+//  Notas de implementación
+//  ---------------------------------------------------------------------------
+//  1. PostgreSQL no permite expresar de manera declarativa la regla "no
+//     solapar rangos" mediante un UNIQUE INDEX convencional; se requiere un
+//     EXCLUDE USING gist con btree_gist. La aplicación implementa esta
+//     restricción a nivel de servicio dentro de una transacción
+//     Serializable (ver ReservationsService.create — Paso 4), lo cual es
+//     aceptable académicamente y permite documentar la lógica de
+//     concurrencia en el Capítulo 5.
+//  2. El timestamp se persiste como Timestamptz para mantener consistencia
+//     entre clientes con distintos husos horarios (Argentina ↔ servidores
+//     en UTC).
+//  3. El soft-delete de canchas (isActive = false) se prefiere sobre el
+//     borrado físico porque conserva el histórico para reportes y auditoría.
+// ============================================================================

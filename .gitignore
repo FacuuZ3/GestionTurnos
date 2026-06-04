@@ -1,0 +1,32 @@
+# Dependencias
+node_modules/
+.pnp.*
+
+# Builds
+dist/
+.next/
+out/
+build/
+
+# Variables de entorno
+.env
+.env.local
+.env.*.local
+
+# Logs
+*.log
+npm-debug.log*
+apps/api/logs/
+
+# Editor
+.vscode/
+.idea/
+.DS_Store
+
+# Prisma
+apps/api/prisma/migrations/dev/
+
+# Playwright
+apps/web/test-results/
+apps/web/playwright-report/
+apps/web/playwright/.cache/

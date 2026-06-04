@@ -1,0 +1,115 @@
+name: CI
+
+# ============================================================================
+# Pipeline de CI para Pádel Turnos
+# ----------------------------------------------------------------------------
+# Se ejecuta en:
+#   - push a la rama main
+#   - cualquier pull request
+# Verifica:
+#   - Lint y type-check del frontend
+#   - Type-check y unit tests del backend (con PostgreSQL real)
+#   - Build de ambos
+# ============================================================================
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# Cancela ejecuciones anteriores del mismo branch para ahorrar minutos.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # ==========================================================================
+  # BACKEND
+  # ==========================================================================
+  backend:
+    name: Backend (lint + test + build)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    # Necesitamos PostgreSQL para que Prisma pueda correr migrate + tests.
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: padel
+          POSTGRES_PASSWORD: padel
+          POSTGRES_DB: padel_turnos_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U padel"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=10
+
+    defaults:
+      run:
+        working-directory: apps/api
+
+    env:
+      DATABASE_URL: postgresql://padel:padel@localhost:5432/padel_turnos_test?schema=public
+      NODE_ENV: test
+      APP_URL: http://localhost:3001
+      FRONTEND_URL: http://localhost:3000
+      JWT_ACCESS_SECRET: ${{ secrets.JWT_ACCESS_SECRET || 'test-access-secret-with-at-least-32-characters-padding' }}
+      JWT_REFRESH_SECRET: ${{ secrets.JWT_REFRESH_SECRET || 'test-refresh-secret-with-at-least-32-characters-padding' }}
+      JWT_ACCESS_EXPIRES_IN: 15m
+      JWT_REFRESH_EXPIRES_IN: 7d
+      MAIL_HOST: smtp.test.local
+      MAIL_PORT: '587'
+      MAIL_USER: test
+      MAIL_PASSWORD: test
+      MAIL_FROM: 'Test <no-reply@test.local>'
+      THROTTLE_TTL: '60'
+      THROTTLE_LIMIT: '10'
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: apps/api/package-lock.json
+
+      - run: npm ci
+      - run: npx prisma generate
+      - run: npx prisma migrate deploy
+      - run: npm test
+      - run: npm run build
+
+  # ==========================================================================
+  # FRONTEND
+  # ==========================================================================
+  frontend:
+    name: Frontend (lint + build)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    defaults:
+      run:
+        working-directory: apps/web
+
+    env:
+      NEXT_PUBLIC_API_URL: http://localhost:3001
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: apps/web/package-lock.json
+
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run type-check
+      - run: npm run build

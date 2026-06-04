@@ -1,0 +1,205 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/*
+ * Estilos globales del frontend.
+ * Sobrescrituras finas a react-big-calendar para integrarlo con el resto del
+ * sistema de diseño (Geist + Tailwind + paleta brand/zinc).
+ */
+
+html,
+body {
+  height: 100%;
+}
+
+/* ===========================================================================
+ *  react-big-calendar — refinamientos visuales
+ * ===========================================================================*/
+
+/* Tipografía consistente con el resto de la app. */
+.rbc-calendar {
+  font-family: var(--font-geist-sans), system-ui, sans-serif;
+  color: #18181b; /* zinc-900 */
+}
+
+/* Toolbar: botones más sobrios. */
+.rbc-toolbar button {
+  border-radius: 8px;
+  border: 1px solid #e4e4e7; /* zinc-200 */
+  background: #ffffff;
+  color: #3f3f46; /* zinc-700 */
+  padding: 6px 12px;
+  font-size: 13px;
+  font-weight: 500;
+  transition: background-color 120ms ease, border-color 120ms ease;
+}
+.rbc-toolbar button:hover {
+  background: #f4f4f5; /* zinc-100 */
+}
+.rbc-toolbar button.rbc-active,
+.rbc-toolbar button.rbc-active:hover {
+  background: #047857; /* brand-700 */
+  color: #ffffff;
+  border-color: #047857;
+}
+.rbc-toolbar-label {
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: #18181b;
+}
+
+/* Encabezado de días (lun, mar, ...). */
+.rbc-header {
+  padding: 10px 4px;
+  border-bottom: 1px solid #e4e4e7;
+  font-size: 11px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: #71717a; /* zinc-500 */
+}
+.rbc-header + .rbc-header {
+  border-left: 1px solid #f4f4f5;
+}
+
+/* Líneas horarias más sutiles. */
+.rbc-time-content,
+.rbc-time-header-content,
+.rbc-time-view {
+  border-color: #e4e4e7;
+}
+.rbc-day-slot .rbc-time-slot {
+  border-top: 1px dashed #f4f4f5;
+}
+.rbc-timeslot-group {
+  border-bottom: 1px solid #e4e4e7;
+  min-height: 56px; /* más respiración vertical */
+}
+.rbc-time-gutter .rbc-timeslot-group {
+  font-family: var(--font-geist-mono), ui-monospace, monospace;
+  font-size: 11px;
+  color: #a1a1aa; /* zinc-400 */
+}
+.rbc-time-gutter .rbc-label {
+  padding: 0 8px;
+}
+
+/* Día actual: fondo apenas teñido. */
+.rbc-today {
+  background: #ecfdf5; /* brand-50 */
+}
+
+/* Eventos: sin borde exterior (los estilos vienen de eventPropGetter). */
+.rbc-event,
+.rbc-day-slot .rbc-background-event {
+  border: none !important;
+  padding: 0 !important;
+  cursor: pointer;
+  transition: transform 100ms ease, filter 100ms ease, box-shadow 120ms ease;
+}
+.rbc-event:hover {
+  filter: brightness(1.05);
+  transform: translateY(-1px);
+}
+.rbc-event:focus,
+.rbc-event.rbc-selected {
+  outline: 2px solid #10b981;
+  outline-offset: 1px;
+}
+
+/* Cuando varios eventos se solapan en la misma franja, react-big-calendar
+   los distribuye horizontalmente. Forzamos un pequeño gap visual y un
+   ancho mínimo para que el contenido sea legible. */
+.rbc-day-slot .rbc-event {
+  border-radius: 6px;
+}
+.rbc-day-slot .rbc-events-container {
+  margin-right: 4px;
+}
+
+/* Cabecera del calendario en vista mes. */
+.rbc-month-view {
+  border-color: #e4e4e7;
+}
+.rbc-date-cell {
+  padding: 6px;
+  font-size: 12px;
+  color: #52525b;
+}
+.rbc-date-cell.rbc-now {
+  font-weight: 700;
+  color: #047857;
+}
+
+/* Toolbar mobile: que apile en pantallas chicas. */
+@media (max-width: 640px) {
+  .rbc-toolbar {
+    flex-direction: column;
+    gap: 8px;
+    align-items: stretch;
+  }
+  .rbc-toolbar .rbc-toolbar-label {
+    text-align: center;
+  }
+}
+
+/* ===========================================================================
+ *  Dark mode — overrides para react-big-calendar
+ * ===========================================================================*/
+.dark .rbc-calendar {
+  color: #e4e4e7; /* zinc-200 */
+}
+.dark .rbc-toolbar button {
+  background: #18181b; /* zinc-900 */
+  border-color: #27272a; /* zinc-800 */
+  color: #d4d4d8; /* zinc-300 */
+}
+.dark .rbc-toolbar button:hover {
+  background: #27272a;
+}
+.dark .rbc-toolbar button.rbc-active,
+.dark .rbc-toolbar button.rbc-active:hover {
+  background: #047857;
+  color: #ffffff;
+  border-color: #047857;
+}
+.dark .rbc-toolbar-label {
+  color: #fafafa;
+}
+.dark .rbc-header {
+  border-bottom-color: #27272a;
+  color: #a1a1aa; /* zinc-400 */
+}
+.dark .rbc-header + .rbc-header {
+  border-left-color: #27272a;
+}
+.dark .rbc-time-content,
+.dark .rbc-time-header-content,
+.dark .rbc-time-view,
+.dark .rbc-month-view,
+.dark .rbc-month-row + .rbc-month-row,
+.dark .rbc-day-bg + .rbc-day-bg {
+  border-color: #27272a;
+}
+.dark .rbc-timeslot-group {
+  border-bottom-color: #27272a;
+}
+.dark .rbc-day-slot .rbc-time-slot {
+  border-top-color: #1f1f23;
+}
+.dark .rbc-time-gutter .rbc-timeslot-group {
+  color: #71717a;
+}
+.dark .rbc-today {
+  background: rgba(16, 185, 129, 0.08); /* brand-500 con baja opacidad */
+}
+.dark .rbc-off-range-bg {
+  background: #18181b;
+}
+.dark .rbc-date-cell {
+  color: #a1a1aa;
+}
+.dark .rbc-date-cell.rbc-now {
+  color: #34d399; /* brand-400 */
+}
