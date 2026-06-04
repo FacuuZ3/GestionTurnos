@@ -1,0 +1,72 @@
+# =============================================================================
+#  .gitattributes - Normalizacion de line endings cross-platform.
+# -----------------------------------------------------------------------------
+#  Estrategia:
+#    - Todos los archivos de texto se almacenan con LF en el repositorio.
+#    - Al hacer checkout, Git no convierte a CRLF (eol=lf): el toolchain
+#      moderno (VSCode, Node, npm, Next.js, NestJS) trabaja sin problemas
+#      con LF en Windows.
+#    - Los archivos binarios quedan exentos para evitar corrupcion.
+#    - Los scripts .sh fuerzan LF (requeridos por shell de Linux).
+#    - Los scripts .bat / .cmd fuerzan CRLF (requeridos por cmd.exe).
+# =============================================================================
+
+# Default para archivos de texto.
+* text=auto eol=lf
+
+# -----------------------------------------------------------------------------
+# Codigo fuente
+# -----------------------------------------------------------------------------
+*.ts        text eol=lf
+*.tsx       text eol=lf
+*.js        text eol=lf
+*.jsx       text eol=lf
+*.mjs       text eol=lf
+*.cjs       text eol=lf
+*.json      text eol=lf
+*.jsonc     text eol=lf
+*.html      text eol=lf
+*.css       text eol=lf
+*.scss      text eol=lf
+*.sass      text eol=lf
+*.md        text eol=lf
+*.mdx       text eol=lf
+*.yml       text eol=lf
+*.yaml      text eol=lf
+*.toml      text eol=lf
+*.xml       text eol=lf
+*.svg       text eol=lf
+*.sql       text eol=lf
+*.prisma    text eol=lf
+
+# -----------------------------------------------------------------------------
+# Scripts y archivos de plataforma especifica
+# -----------------------------------------------------------------------------
+*.sh        text eol=lf
+Dockerfile  text eol=lf
+*.bat       text eol=crlf
+*.cmd       text eol=crlf
+*.ps1       text eol=crlf
+
+# -----------------------------------------------------------------------------
+# Archivos binarios (no transformar nunca)
+# -----------------------------------------------------------------------------
+*.png       binary
+*.jpg       binary
+*.jpeg      binary
+*.gif       binary
+*.webp      binary
+*.ico       binary
+*.avif      binary
+*.woff      binary
+*.woff2     binary
+*.ttf       binary
+*.otf       binary
+*.eot       binary
+*.pdf       binary
+*.zip       binary
+*.gz        binary
+*.tar       binary
+*.mp4       binary
+*.mov       binary
+*.mp3       binary
