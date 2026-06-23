@@ -27,6 +27,24 @@ import { api, ApiError } from '@/lib/api';
 import { resetPasswordSchema, ResetPasswordValues } from '@/lib/schemas';
 
 export default function ResetPasswordPage() {
+  // useSearchParams() obliga a renderizado en cliente: lo aislamos detrás de un
+  // <Suspense> para que el build estático (Next 14) no falle al prerenderizar.
+  return (
+    <React.Suspense fallback={<ResetPasswordFallback />}>
+      <ResetPasswordForm />
+    </React.Suspense>
+  );
+}
+
+function ResetPasswordFallback() {
+  return (
+    <div className="container flex min-h-[calc(100dvh-4rem)] items-center justify-center py-10">
+      <div className="h-80 w-full max-w-md animate-pulse rounded-2xl bg-zinc-100 dark:bg-zinc-900" />
+    </div>
+  );
+}
+
+function ResetPasswordForm() {
   const params = useSearchParams();
   const token = params.get('token') ?? '';
   const [serverError, setServerError] = React.useState<string | null>(null);

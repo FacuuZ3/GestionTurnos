@@ -16,6 +16,7 @@ const tabs = [
   { href: '/dashboard/admin/recurring', label: 'Turnos fijos' },
   { href: '/dashboard/admin/stats', label: 'Estadísticas' },
   { href: '/dashboard/admin/club', label: 'Club' },
+  { href: '/dashboard/admin/users', label: 'Usuarios' },
   { href: '/dashboard/admin/audit', label: 'Auditoría' },
 ];
 

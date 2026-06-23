@@ -11,11 +11,12 @@
 
 import {
   BadRequestException,
+  ForbiddenException,
   Injectable,
   NotFoundException,
   UnauthorizedException,
 } from '@nestjs/common';
-import { Role, User } from '@prisma/client';
+import { Prisma, Role, User } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
 import { PrismaService } from '../prisma/prisma.service';
 
@@ -27,6 +28,24 @@ export interface CreateUserData {
   role?: Role;
   emailVerifyToken: string;
 }
+
+/**
+ * Proyección de un usuario SIN campos sensibles (password, tokens). Se usa en
+ * los listados de administración para no exponer hashes ni tokens al cliente.
+ */
+const SAFE_USER_SELECT = {
+  id: true,
+  name: true,
+  email: true,
+  phone: true,
+  role: true,
+  isEmailVerified: true,
+  createdAt: true,
+  updatedAt: true,
+} satisfies Prisma.UserSelect;
+
+/** Vista pública (sin datos sensibles) de un usuario para el panel admin. */
+export type AdminUserView = Prisma.UserGetPayload<{ select: typeof SAFE_USER_SELECT }>;
 
 @Injectable()
 export class UsersService {
@@ -172,5 +191,74 @@ export class UsersService {
         passwordResetTokenExpiresAt: null,
       },
     });
+  }
+
+  // -------------------------------------------------------------------------
+  // Gestión administrativa de usuarios (ADMIN)
+  // -------------------------------------------------------------------------
+
+  /**
+   * Listado de usuarios para el panel admin. Filtros opcionales por rol y por
+   * texto (nombre o email). Devuelve sólo campos no sensibles.
+   */
+  listAll(params: { role?: Role; search?: string }): Promise<AdminUserView[]> {
+    const where: Prisma.UserWhereInput = {};
+    if (params.role) where.role = params.role;
+    if (params.search) {
+      where.OR = [
+        { name: { contains: params.search, mode: 'insensitive' } },
+        { email: { contains: params.search, mode: 'insensitive' } },
+      ];
+    }
+    return this.prisma.user.findMany({
+      where,
+      select: SAFE_USER_SELECT,
+      orderBy: { createdAt: 'desc' },
+    });
+  }
+
+  /**
+   * Cambia el rol de un usuario (promover/degradar admin).
+   *
+   * Guardrail: un admin no puede cambiar su propio rol, para evitar quedarse
+   * sin acceso (auto-degradación accidental y consiguiente lock-out).
+   */
+  async setRole(id: string, role: Role, actingAdminId: string): Promise<AdminUserView> {
+    if (id === actingAdminId) {
+      throw new ForbiddenException('No podés cambiar tu propio rol.');
+    }
+    await this.findByIdOrThrow(id);
+    return this.prisma.user.update({
+      where: { id },
+      data: { role },
+      select: SAFE_USER_SELECT,
+    });
+  }
+
+  /**
+   * Elimina un usuario. Sólo se permite si:
+   *  - No es la cuenta del propio admin que ejecuta la acción.
+   *  - No tiene reservas asociadas (Reservation.user es onDelete: Restrict, de
+   *    modo que un borrado físico fallaría; además se preserva el histórico).
+   */
+  async adminDelete(
+    id: string,
+    actingAdminId: string,
+  ): Promise<{ id: string }> {
+    if (id === actingAdminId) {
+      throw new ForbiddenException('No podés eliminar tu propia cuenta.');
+    }
+    await this.findByIdOrThrow(id);
+
+    const reservations = await this.prisma.reservation.count({ where: { userId: id } });
+    if (reservations > 0) {
+      throw new BadRequestException(
+        `No se puede eliminar: el usuario tiene ${reservations} reserva(s) asociada(s). ` +
+          'Cancelá sus reservas antes de eliminarlo para preservar el histórico.',
+      );
+    }
+
+    await this.prisma.user.delete({ where: { id } });
+    return { id };
   }
 }

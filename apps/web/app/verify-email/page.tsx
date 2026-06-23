@@ -22,6 +22,24 @@ import {
 type Status = 'idle' | 'loading' | 'ok' | 'error';
 
 export default function VerifyEmailPage() {
+  // useSearchParams() obliga a renderizado en cliente: lo aislamos detrás de un
+  // <Suspense> para que el build estático (Next 14) no falle al prerenderizar.
+  return (
+    <React.Suspense fallback={<VerifyEmailFallback />}>
+      <VerifyEmailInner />
+    </React.Suspense>
+  );
+}
+
+function VerifyEmailFallback() {
+  return (
+    <div className="container flex min-h-[calc(100vh-4rem)] items-center justify-center py-10">
+      <div className="h-64 w-full max-w-md animate-pulse rounded-2xl bg-zinc-100 dark:bg-zinc-900" />
+    </div>
+  );
+}
+
+function VerifyEmailInner() {
   const params = useSearchParams();
   const token = params.get('token');
   const [status, setStatus] = React.useState<Status>('idle');

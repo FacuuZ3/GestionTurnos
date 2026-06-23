@@ -6,12 +6,35 @@
  *  - POST  /users/me/change-password   → cambiar contraseña validando la actual.
  */
 
-import { Body, Controller, Get, HttpCode, HttpStatus, Patch, Post } from '@nestjs/common';
-import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  HttpCode,
+  HttpStatus,
+  Param,
+  ParseUUIDPipe,
+  Patch,
+  Post,
+  Query,
+  UseGuards,
+} from '@nestjs/common';
+import {
+  ApiBearerAuth,
+  ApiOperation,
+  ApiParam,
+  ApiQuery,
+  ApiTags,
+} from '@nestjs/swagger';
+import { Role } from '@prisma/client';
 import { CurrentUser, AuthUser } from '../common/decorators/current-user.decorator';
+import { Roles } from '../common/decorators/roles.decorator';
+import { RolesGuard } from '../common/guards/roles.guard';
 import { UsersService } from './users.service';
 import { UpdateProfileDto } from './dto/update-profile.dto';
 import { ChangePasswordDto } from './dto/change-password.dto';
+import { SetRoleDto } from './dto/set-role.dto';
 
 @ApiTags('users')
 @ApiBearerAuth('access-token')
@@ -43,5 +66,44 @@ export class UsersController {
     @Body() dto: ChangePasswordDto,
   ) {
     return this.usersService.changePassword(current.id, dto.currentPassword, dto.newPassword);
+  }
+
+  // -------------------------------------------------------------------------
+  // Gestión administrativa de usuarios (ADMIN)
+  // -------------------------------------------------------------------------
+
+  @UseGuards(RolesGuard)
+  @Roles(Role.ADMIN)
+  @Get()
+  @ApiOperation({ summary: 'Listar usuarios con filtros opcionales (ADMIN).' })
+  @ApiQuery({ name: 'role', required: false, enum: Role })
+  @ApiQuery({ name: 'search', required: false, description: 'Nombre o email.' })
+  list(@Query('role') role?: Role, @Query('search') search?: string) {
+    return this.usersService.listAll({ role, search });
+  }
+
+  @UseGuards(RolesGuard)
+  @Roles(Role.ADMIN)
+  @Patch(':id/role')
+  @ApiOperation({ summary: 'Cambiar el rol de un usuario (ADMIN).' })
+  @ApiParam({ name: 'id', format: 'uuid' })
+  setRole(
+    @Param('id', new ParseUUIDPipe()) id: string,
+    @Body() dto: SetRoleDto,
+    @CurrentUser() current: AuthUser,
+  ) {
+    return this.usersService.setRole(id, dto.role, current.id);
+  }
+
+  @UseGuards(RolesGuard)
+  @Roles(Role.ADMIN)
+  @Delete(':id')
+  @ApiOperation({ summary: 'Eliminar un usuario sin reservas asociadas (ADMIN).' })
+  @ApiParam({ name: 'id', format: 'uuid' })
+  remove(
+    @Param('id', new ParseUUIDPipe()) id: string,
+    @CurrentUser() current: AuthUser,
+  ) {
+    return this.usersService.adminDelete(id, current.id);
   }
 }
