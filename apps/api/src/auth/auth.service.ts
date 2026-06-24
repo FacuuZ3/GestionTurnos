@@ -116,6 +116,11 @@ export class AuthService {
     const ok = await bcrypt.compare(dto.password, user.password);
     if (!ok) throw new UnauthorizedException('Credenciales inválidas.');
 
+    // Borrado lógico: una cuenta desactivada por un admin no puede ingresar.
+    if (!user.isActive) {
+      throw new UnauthorizedException('La cuenta está desactivada. Contactá al complejo.');
+    }
+
     if (!user.isEmailVerified) {
       throw new UnauthorizedException('La cuenta aún no fue verificada por email.');
     }
@@ -170,6 +175,11 @@ export class AuthService {
 
   async refresh(userId: string): Promise<TokenPair> {
     const user = await this.users.findByIdOrThrow(userId);
+    // Corta las sesiones abiertas de una cuenta desactivada en la próxima
+    // renovación del access token (vida corta), sin necesidad de revocar JWTs.
+    if (!user.isActive) {
+      throw new UnauthorizedException('La cuenta está desactivada.');
+    }
     return this.signTokens(user);
   }
 

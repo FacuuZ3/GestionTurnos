@@ -56,6 +56,7 @@ import { CreateReservationDto } from './dto/create-reservation.dto';
 import { RescheduleReservationDto } from './dto/reschedule.dto';
 import { ReservationEventPayload } from '../notifications/listeners/reservation.listener';
 import { BOOKING_POLICY, daysFromNow, hoursFromNow } from './booking-policy';
+import { ReservationForReport } from './reservations-report.service';
 
 /** Duración estándar de un turno (en minutos). */
 const SLOT_DURATION_MIN = 90;
@@ -190,6 +191,31 @@ export class ReservationsService {
     if (filters.date) {
       // Misma normalización local-time que en getAvailability para evitar
       // que el filtro caiga en el día anterior por el huso horario.
+      const dayStart = parseDateLocal(filters.date);
+      const dayEnd = new Date(dayStart);
+      dayEnd.setDate(dayEnd.getDate() + 1);
+      where.startTime = { gte: dayStart, lt: dayEnd };
+    }
+    return this.prisma.reservation.findMany({
+      where,
+      orderBy: { startTime: 'asc' },
+      include: { court: true, user: true },
+    });
+  }
+
+  /**
+   * Listado para el reporte exportable (PDF). Filtra por día, cancha y estado,
+   * e incluye court + user para imprimir nombre y email en el documento.
+   */
+  listForReport(filters: {
+    date?: string;
+    courtId?: string;
+    status?: ReservationStatus;
+  }): Promise<ReservationForReport[]> {
+    const where: Prisma.ReservationWhereInput = {};
+    if (filters.courtId) where.courtId = filters.courtId;
+    if (filters.status) where.status = filters.status;
+    if (filters.date) {
       const dayStart = parseDateLocal(filters.date);
       const dayEnd = new Date(dayStart);
       dayEnd.setDate(dayEnd.getDate() + 1);

@@ -87,6 +87,10 @@ model User {
   password         String   @db.VarChar(255)
   phone            String?  @db.VarChar(30)
   role             Role     @default(USER)
+  /// Borrado lógico: una cuenta inactiva no puede iniciar sesión ni renovar
+  /// token. Nunca se elimina la fila para preservar el histórico de reservas
+  /// (la FK Reservation.user es onDelete: Restrict).
+  isActive         Boolean  @default(true)
   isEmailVerified             Boolean   @default(false)
   emailVerifyToken            String?   @unique @db.VarChar(120)
   /// Token aleatorio para reseteo de contraseña. Se invalida tras el uso.
@@ -100,6 +104,7 @@ model User {
   updatedAt DateTime @updatedAt
 
   @@index([role])
+  @@index([isActive])
   @@map("users")
 }
 

@@ -1,9 +1,14 @@
 /**
  * /dashboard/admin/users - Gestión de usuarios (ADMIN).
  * ---------------------------------------------------------------------------
- * Listado de usuarios con cambio de rol (promover / degradar admin) y borrado
- * de cuentas sin reservas. Toda mutación queda registrada automáticamente por
- * el AuditInterceptor global.
+ * Listado de usuarios con:
+ *   - Cambio de rol (promover / degradar admin).
+ *   - Activar / desactivar la cuenta (borrado lógico: la fila nunca se elimina,
+ *     para preservar el histórico de reservas). Una cuenta inactiva no puede
+ *     iniciar sesión ni renovar token.
+ *   - Eliminación definitiva (solo cuentas sin reservas asociadas).
+ *
+ * Toda mutación queda registrada automáticamente por el AuditInterceptor global.
  */
 
 'use client';
@@ -37,22 +42,38 @@ export default function AdminUsersPage() {
     queryFn: () => api<UserDto[]>('/users'),
   });
 
+  const invalidate = () => queryClient.invalidateQueries({ queryKey: ['admin-users'] });
+
   const roleMutation = useMutation({
     mutationFn: (vars: { id: string; role: Role }) =>
       api<UserDto>(`/users/${vars.id}/role`, { method: 'PATCH', body: { role: vars.role } }),
     onSuccess: () => {
       setActionError(null);
-      queryClient.invalidateQueries({ queryKey: ['admin-users'] });
+      invalidate();
     },
     onError: (e) =>
       setActionError(e instanceof ApiError ? e.message : 'No pudimos cambiar el rol.'),
+  });
+
+  const activeMutation = useMutation({
+    mutationFn: (vars: { id: string; isActive: boolean }) =>
+      api<UserDto>(`/users/${vars.id}/active`, {
+        method: 'PATCH',
+        body: { isActive: vars.isActive },
+      }),
+    onSuccess: () => {
+      setActionError(null);
+      invalidate();
+    },
+    onError: (e) =>
+      setActionError(e instanceof ApiError ? e.message : 'No pudimos cambiar el estado.'),
   });
 
   const deleteMutation = useMutation({
     mutationFn: (id: string) => api<{ id: string }>(`/users/${id}`, { method: 'DELETE' }),
     onSuccess: () => {
       setActionError(null);
-      queryClient.invalidateQueries({ queryKey: ['admin-users'] });
+      invalidate();
     },
     onError: (e) =>
       setActionError(e instanceof ApiError ? e.message : 'No pudimos eliminar el usuario.'),
@@ -60,9 +81,10 @@ export default function AdminUsersPage() {
 
   const confirmAndDelete = (user: UserDto) => {
     const ok = window.confirm(
-      `¿Eliminar la cuenta de "${user.name}" (${user.email})?\n\n` +
+      `¿Eliminar definitivamente la cuenta de "${user.name}" (${user.email})?\n\n` +
         '⚠️ Esta acción NO se puede deshacer. Sólo se permite si el usuario no ' +
-        'tiene reservas asociadas.',
+        'tiene reservas asociadas. Si querés conservar el historial, usá ' +
+        '"Desactivar" en lugar de eliminar.',
     );
     if (ok) deleteMutation.mutate(user.id);
   };
@@ -80,7 +102,8 @@ export default function AdminUsersPage() {
         <div>
           <CardTitle>Usuarios</CardTitle>
           <CardDescription>
-            Gestión de roles y cuentas. No podés modificar ni eliminar tu propia cuenta.
+            Gestión de roles y cuentas. Una cuenta desactivada no puede ingresar.
+            No podés modificar tu propia cuenta.
           </CardDescription>
         </div>
         <Input
@@ -97,12 +120,12 @@ export default function AdminUsersPage() {
         )}
 
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[680px] text-sm">
+          <table className="w-full min-w-[720px] text-sm">
             <thead className="border-b border-zinc-200 text-left text-xs uppercase text-zinc-500">
               <tr>
                 <th className="py-2 pr-4">Usuario</th>
                 <th className="py-2 pr-4">Rol</th>
-                <th className="py-2 pr-4">Email verificado</th>
+                <th className="py-2 pr-4">Estado</th>
                 <th className="py-2 pr-4 text-right">Acciones</th>
               </tr>
             </thead>
@@ -111,6 +134,7 @@ export default function AdminUsersPage() {
                 const isSelf = u.id === currentUserId;
                 const nextRole: Role = u.role === 'ADMIN' ? 'USER' : 'ADMIN';
                 const roleBusy = roleMutation.isPending && roleMutation.variables?.id === u.id;
+                const activeBusy = activeMutation.isPending && activeMutation.variables?.id === u.id;
                 const deleteBusy = deleteMutation.isPending && deleteMutation.variables === u.id;
                 return (
                   <tr key={u.id}>
@@ -135,10 +159,10 @@ export default function AdminUsersPage() {
                       )}
                     </td>
                     <td className="py-2 pr-4">
-                      {u.isEmailVerified ? (
-                        <span className="text-brand-700">Sí</span>
+                      {u.isActive ? (
+                        <span className="text-brand-700">Activa</span>
                       ) : (
-                        <span className="text-amber-600">Pendiente</span>
+                        <span className="text-red-600">Inactiva</span>
                       )}
                     </td>
                     <td className="py-2 pr-4 text-right">
@@ -154,7 +178,18 @@ export default function AdminUsersPage() {
                         </Button>
                         <Button
                           size="sm"
-                          variant="danger"
+                          variant={u.isActive ? 'danger' : 'primary'}
+                          disabled={isSelf}
+                          loading={activeBusy}
+                          onClick={() =>
+                            activeMutation.mutate({ id: u.id, isActive: !u.isActive })
+                          }
+                        >
+                          {u.isActive ? 'Desactivar' : 'Activar'}
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="ghost"
                           disabled={isSelf}
                           loading={deleteBusy}
                           onClick={() => confirmAndDelete(u)}

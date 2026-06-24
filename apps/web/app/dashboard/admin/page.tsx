@@ -32,7 +32,9 @@ import { CourtsTimeline } from '@/components/courts-timeline';
 import { ReservationModal } from '@/components/reservation-modal';
 import { RescheduleModal } from '@/components/reschedule-modal';
 import { ReservationsGroupedTable } from '@/components/reservations-grouped-table';
+import { Input } from '@/components/ui/input';
 import { api, ApiError } from '@/lib/api';
+import { getAccessToken } from '@/lib/auth';
 import {
   AvailabilitySlot,
   CourtDto,
@@ -153,6 +155,9 @@ export default function AdminReservationsPage() {
         onSlotClick={onSlotClick}
       />
 
+      {/* Exportar reporte de reservas (PDF: descarga o email) */}
+      <ReportExportCard courts={courtsQuery.data ?? []} defaultDate={date} />
+
       {/* Reservas del día — agrupadas por estado y por cancha */}
       <Card>
         <CardHeader>
@@ -201,6 +206,166 @@ export default function AdminReservationsPage() {
         reservation={selectedReservation}
       />
     </div>
+  );
+}
+
+// ===========================================================================
+//  Exportación de reportes (PDF descargable o enviado por email)
+// ===========================================================================
+
+const STATUS_OPTIONS: { value: '' | ReservationStatus; label: string }[] = [
+  { value: '', label: 'Todos los estados' },
+  { value: 'CONFIRMED', label: 'Confirmadas' },
+  { value: 'PENDING', label: 'Pendientes' },
+  { value: 'CANCELLED', label: 'Canceladas' },
+];
+
+const selectClass =
+  'h-10 rounded-lg border border-zinc-200 bg-white px-3 text-sm text-zinc-900 ' +
+  'focus:border-brand-500 focus:outline-none focus:ring-4 focus:ring-brand-500/10 ' +
+  'dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-100';
+
+function ReportExportCard({
+  courts,
+  defaultDate,
+}: {
+  courts: CourtDto[];
+  defaultDate: string;
+}) {
+  const [date, setDate] = React.useState(defaultDate);
+  const [courtId, setCourtId] = React.useState('');
+  const [status, setStatus] = React.useState<'' | ReservationStatus>('');
+  const [feedback, setFeedback] = React.useState<{ kind: 'ok' | 'error'; msg: string } | null>(null);
+  const [downloading, setDownloading] = React.useState(false);
+
+  // Filtros en el formato que esperan los endpoints (undefined = sin filtro).
+  const queryParams = () => ({
+    date: date || undefined,
+    courtId: courtId || undefined,
+    status: status || undefined,
+  });
+
+  const emailMutation = useMutation({
+    mutationFn: () =>
+      api<{ message: string; records: number }>('/reservations/report/email', {
+        method: 'POST',
+        query: queryParams(),
+      }),
+    onSuccess: (res) =>
+      setFeedback({ kind: 'ok', msg: `${res.message} (${res.records} registro/s).` }),
+    onError: (e) =>
+      setFeedback({
+        kind: 'error',
+        msg: e instanceof ApiError ? e.message : 'No pudimos enviar el reporte.',
+      }),
+  });
+
+  const downloadPdf = async () => {
+    setFeedback(null);
+    setDownloading(true);
+    try {
+      const base = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001';
+      const url = new URL(`${base}/api/reservations/report.pdf`);
+      const params = queryParams();
+      Object.entries(params).forEach(([k, v]) => {
+        if (v) url.searchParams.set(k, String(v));
+      });
+      const res = await fetch(url.toString(), {
+        headers: { Authorization: `Bearer ${getAccessToken() ?? ''}` },
+      });
+      if (!res.ok) throw new Error(`Error ${res.status}`);
+      const blob = await res.blob();
+      const href = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = href;
+      a.download = `reservas-${date || 'todas'}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(href);
+    } catch (e) {
+      setFeedback({
+        kind: 'error',
+        msg: e instanceof Error ? e.message : 'No pudimos generar el PDF.',
+      });
+    } finally {
+      setDownloading(false);
+    }
+  };
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Exportar reporte de reservas</CardTitle>
+        <CardDescription>
+          Filtrá por fecha, cancha y estado, y descargá el PDF o recibilo por email.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <div className="flex flex-wrap items-end gap-3">
+          <div className="space-y-1.5">
+            <label className="text-xs font-medium text-zinc-500">Fecha</label>
+            <Input
+              type="date"
+              value={date}
+              onChange={(e) => setDate(e.target.value)}
+              className="w-44"
+            />
+          </div>
+          <div className="space-y-1.5">
+            <label className="text-xs font-medium text-zinc-500">Cancha</label>
+            <select
+              value={courtId}
+              onChange={(e) => setCourtId(e.target.value)}
+              className={selectClass}
+            >
+              <option value="">Todas las canchas</option>
+              {courts.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.name}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="space-y-1.5">
+            <label className="text-xs font-medium text-zinc-500">Estado</label>
+            <select
+              value={status}
+              onChange={(e) => setStatus(e.target.value as '' | ReservationStatus)}
+              className={selectClass}
+            >
+              {STATUS_OPTIONS.map((o) => (
+                <option key={o.value} value={o.value}>
+                  {o.label}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div className="flex gap-2">
+            <Button variant="outline" onClick={downloadPdf} loading={downloading}>
+              Descargar PDF
+            </Button>
+            <Button onClick={() => emailMutation.mutate()} loading={emailMutation.isPending}>
+              Enviar por email
+            </Button>
+          </div>
+        </div>
+
+        {feedback && (
+          <div
+            className={
+              'rounded-md border p-3 text-sm ' +
+              (feedback.kind === 'ok'
+                ? 'border-brand-200 bg-brand-50 text-brand-700 dark:border-brand-800 dark:bg-brand-900/30 dark:text-brand-300'
+                : 'border-red-200 bg-red-50 text-red-700 dark:border-red-900 dark:bg-red-950/40 dark:text-red-300')
+            }
+          >
+            {feedback.msg}
+          </div>
+        )}
+      </CardContent>
+    </Card>
   );
 }
 

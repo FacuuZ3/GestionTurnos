@@ -44,6 +44,11 @@ export class EmailChannel implements INotificationChannel {
         subject: payload.subject,
         text: payload.text,
         html: payload.html,
+        attachments: payload.attachments?.map((a) => ({
+          filename: a.filename,
+          content: a.content,
+          contentType: a.contentType ?? 'application/octet-stream',
+        })),
       });
       this.logger.log(`Email enviado a ${payload.to} — "${payload.subject}".`);
     } catch (err) {

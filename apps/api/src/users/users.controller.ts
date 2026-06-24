@@ -35,6 +35,7 @@ import { UsersService } from './users.service';
 import { UpdateProfileDto } from './dto/update-profile.dto';
 import { ChangePasswordDto } from './dto/change-password.dto';
 import { SetRoleDto } from './dto/set-role.dto';
+import { SetActiveDto } from './dto/set-active.dto';
 
 @ApiTags('users')
 @ApiBearerAuth('access-token')
@@ -93,6 +94,19 @@ export class UsersController {
     @CurrentUser() current: AuthUser,
   ) {
     return this.usersService.setRole(id, dto.role, current.id);
+  }
+
+  @UseGuards(RolesGuard)
+  @Roles(Role.ADMIN)
+  @Patch(':id/active')
+  @ApiOperation({ summary: 'Activar o desactivar una cuenta — borrado lógico (ADMIN).' })
+  @ApiParam({ name: 'id', format: 'uuid' })
+  setActive(
+    @Param('id', new ParseUUIDPipe()) id: string,
+    @Body() dto: SetActiveDto,
+    @CurrentUser() current: AuthUser,
+  ) {
+    return this.usersService.setActive(id, dto.isActive, current.id);
   }
 
   @UseGuards(RolesGuard)

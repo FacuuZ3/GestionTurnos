@@ -39,6 +39,7 @@ const SAFE_USER_SELECT = {
   email: true,
   phone: true,
   role: true,
+  isActive: true,
   isEmailVerified: true,
   createdAt: true,
   updatedAt: true,
@@ -214,6 +215,29 @@ export class UsersService {
       where,
       select: SAFE_USER_SELECT,
       orderBy: { createdAt: 'desc' },
+    });
+  }
+
+  /**
+   * Activa o desactiva una cuenta (borrado lógico). NUNCA elimina la fila:
+   * preserva el histórico de reservas (FK Reservation.user onDelete: Restrict).
+   * Una cuenta desactivada no puede iniciar sesión ni renovar token.
+   *
+   * Guardrail: un admin no puede desactivarse a sí mismo (evita lock-out).
+   */
+  async setActive(
+    id: string,
+    isActive: boolean,
+    actingAdminId: string,
+  ): Promise<AdminUserView> {
+    if (id === actingAdminId) {
+      throw new ForbiddenException('No podés desactivar tu propia cuenta.');
+    }
+    await this.findByIdOrThrow(id);
+    return this.prisma.user.update({
+      where: { id },
+      data: { isActive },
+      select: SAFE_USER_SELECT,
     });
   }
 

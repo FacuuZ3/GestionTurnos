@@ -151,4 +151,28 @@ export class NotificationsService {
         `Si tenés dudas, contactá al complejo.`,
     });
   }
+
+  /**
+   * Envía a un admin el reporte de reservas en PDF como archivo adjunto.
+   * @param to       email destinatario (el admin que solicitó el reporte).
+   * @param pdf      contenido del PDF ya generado (Buffer).
+   * @param filename nombre del archivo adjunto.
+   * @param summary  resumen legible de los filtros aplicados (va en el cuerpo).
+   */
+  async sendReservationsReport(
+    to: string,
+    pdf: Buffer,
+    filename: string,
+    summary: string,
+  ): Promise<void> {
+    await this.dispatch('email', {
+      to,
+      subject: 'Reporte de reservas — Pádel Turnos',
+      text:
+        `Adjuntamos el reporte de reservas solicitado.\n\n` +
+        `${summary}\n\n` +
+        `El archivo "${filename}" contiene el detalle en formato PDF.`,
+      attachments: [{ filename, content: pdf, contentType: 'application/pdf' }],
+    });
+  }
 }

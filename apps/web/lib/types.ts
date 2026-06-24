@@ -13,6 +13,7 @@ export interface UserDto {
   email: string;
   phone?: string | null;
   role: Role;
+  isActive: boolean;
   isEmailVerified: boolean;
   createdAt: string;
   updatedAt: string;
